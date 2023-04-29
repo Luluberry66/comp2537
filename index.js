@@ -15,7 +15,7 @@ const app = express();
 const Joi = require("joi");
 
 
-const expireTime = 24 * 60 * 60 * 1000; //expires after 1 day  (hours * minutes * seconds * millis)
+const expireTime = 1 * 60 * 60 * 1000; //expires after 1 day  (hours * minutes * seconds * millis)
 
 /* secret information section */
 const mongodb_host = process.env.MONGODB_HOST;
@@ -49,7 +49,12 @@ app.use(session({
 ));
 
 app.get('/', (req,res) => {
-    res.send("<h1>Hello World!</h1>");
+    if (req.session.namePageHits == null) {
+        req.session.namePageHits = 0;
+    } else{
+        req.session.namePageHits++;
+    }
+    res.send("You have visited this page " + req.session.namePageHits + " times!");
 });
 
 app.get('/nosql-injection', async (req,res) => {
