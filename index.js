@@ -8,7 +8,7 @@ const MongoStore = require('connect-mongo');
 const bcrypt = require('bcrypt');
 const saltRounds = 12;
 
-const port = process.env.PORT || 3020;
+const port = process.env.PORT ||3000;
 
 const app = express();
 
@@ -48,13 +48,20 @@ app.use(session({
 }
 ));
 
-app.get('/', (req,res) => {
-    if (req.session.namePageHits == null) {
-        req.session.namePageHits = 0;
-    } else{
-        req.session.namePageHits++;
-    }
-    res.send("You have visited this page " + req.session.namePageHits + " times!");
+app.get("/", (req, res) => {
+  if (!req.session.username) {
+    res.send(`
+      You are not logged in.
+      <br><a href="/login">Login</a>
+      <br><a href="/createUser">Create User</a>
+    `);
+  } else {
+    res.send(`
+      Hello, ${req.session.username}.
+      <br><a href="/members">Members Area</a>
+      <br><a href="/logout">Logout</a>
+    `);
+  }
 });
 
 app.get('/nosql-injection', async (req,res) => {
@@ -90,7 +97,7 @@ app.get('/nosql-injection', async (req,res) => {
 app.get('/about', (req,res) => {
     var color = req.query.color;
 
-    res.send("<h1 style='color:"+color+";'>Patrick Guichon</h1>");
+    res.send("<h1 style='color:"+color+";'>Lulu</h1>");
 });
 
 app.get('/contact', (req,res) => {
@@ -123,8 +130,9 @@ app.get('/createUser', (req,res) => {
     var html = `
     create user
     <form action='/submitUser' method='post'>
-    <input name='username' type='text' placeholder='username'>
-    <input name='password' type='password' placeholder='password'>
+    <input name='username' type='text' placeholder='Enter your username'><br>
+    <input name='email' type='email' placeholder='Enter your email'><br>
+    <input name='password' type='password' placeholder='Enter your password'><br>
     <button>Submit</button>
     </form>
     `;
@@ -136,74 +144,89 @@ app.get('/login', (req,res) => {
     var html = `
     log in
     <form action='/loggingin' method='post'>
-    <input name='username' type='text' placeholder='username'>
-    <input name='password' type='password' placeholder='password'>
+    <input name='email' type='email' placeholder='email'><br>
+    <input name='password' type='password' placeholder='password'><br>
     <button>Submit</button>
     </form>
     `;
     res.send(html);
 });
 
-app.post('/submitUser', async (req,res) => {
-    var username = req.body.username;
-    var password = req.body.password;
+app.post("/submitUser", async (req, res) => {
+  var username = req.body.username;
+  var email = req.body.email;
+  var password = req.body.password;
 
-	const schema = Joi.object(
-		{
-			username: Joi.string().alphanum().max(20).required(),
-			password: Joi.string().max(20).required()
-		});
-	
-	const validationResult = schema.validate({username, password});
-	if (validationResult.error != null) {
-	   console.log(validationResult.error);
-	   res.redirect("/createUser");
-	   return;
-   }
+  if (!username) {
+    res.send("All fields are required. <a href='/createUser'>Try again</a>");
+  } else if (!email) {
+    res.send("All fields are required. <a href='/createUser'>Try again</a>");
+  } else if (!password) {
+    res.send("All fields are required. <a href='/createUser'>Try again</a>");
+  } else {
+    const schema = Joi.object({
+      username: Joi.string().alphanum().max(20).required(),
+      email: Joi.string().email().required(),
+      password: Joi.string().max(20).required(),
+    });
 
-    var hashedPassword = await bcrypt.hash(password, saltRounds);
-	
-	await userCollection.insertOne({username: username, password: hashedPassword});
-	console.log("Inserted user");
+    const validationResult = schema.validate(req.body);
 
-    var html = "successfully created user";
-    res.send(html);
+    if (validationResult.error != null) {
+      console.log(validationResult.error);
+      res.send(
+        `Invalid input: ${validationResult.error.details[0].message}. <a href='/createUser'>Try again</a>`
+      );
+    } else {
+      const salt = await bcrypt.genSalt(saltRounds);
+      const hashedPassword = await bcrypt.hash(password, salt);
+
+      await userCollection.insertOne({
+        username: username,
+        email: email,
+        password: hashedPassword,
+      });
+
+      res.send(
+        `User ${username} has been created. <a href='/login'>Log in</a>`
+      );
+    }
+  }
 });
 
-app.post('/loggingin', async (req,res) => {
-    var username = req.body.username;
-    var password = req.body.password;
 
-	const schema = Joi.string().max(20).required();
-	const validationResult = schema.validate(username);
-	if (validationResult.error != null) {
-	   console.log(validationResult.error);
-	   res.redirect("/login");
-	   return;
-	}
+app.post("/loggingin", async (req, res) => {
+  var username = req.body.username;
+  var email = req.body.email;
+  var password = req.body.password;
 
-	const result = await userCollection.find({username: username}).project({username: 1, password: 1, _id: 1}).toArray();
+  // Find the user in the database using email
+  const user = await userCollection.findOne({ email: email });
+  if (!user) {
+    return res.status(400).send("user not found");
+  }
 
-	console.log(result);
-	if (result.length != 1) {
-		console.log("user not found");
-		res.redirect("/login");
-		return;
-	}
-	if (await bcrypt.compare(password, result[0].password)) {
-		console.log("correct password");
-		req.session.authenticated = true;
-		req.session.username = username;
-		req.session.cookie.maxAge = expireTime;
+  // Compare the password with the hashed password using bcrypt
+  const passwordMatch = await bcrypt.compare(password, user.password);
+  if (!passwordMatch) {
+    return res.status(400).send("invalid password");
+  }
 
-		res.redirect('/loggedIn');
-		return;
-	}
-	else {
-		console.log("incorrect password");
-		res.redirect("/login");
-		return;
-	}
+  // Store the user's name in the session and redirect to members page
+  req.session.username = user.username;
+  console.log("logged in as " + req.session.username);
+  res.redirect("/members");
+
+  const oneHour = 60 * 60 * 1000;
+  req.session.timer = setTimeout(() => {
+    req.session.destroy((err) => {
+      if (err) {
+        console.log(err);
+      } else {
+        console.log("session destroyed successfully");
+      }
+    });
+  }, oneHour);
 });
 
 app.get('/loggedin', (req,res) => {
@@ -214,6 +237,32 @@ app.get('/loggedin', (req,res) => {
     You are logged in!
     `;
     res.send(html);
+});
+app.get("/members", (req, res) => {
+  const name = req.session.username;
+
+  if (!name) {
+    res.redirect("/");
+    return;
+  }
+
+  const randomImage = Math.floor(Math.random() * 2) + 1;
+
+  res.send(`
+    <h1>Hello, ${name}!</h1>
+    <img src="/${randomImage}.gif" alt="random image">
+    <a href="/logout">Logout</a>
+  `);
+});
+
+app.get("/logout", (req, res) => {
+    clearTimeout(req.session.timer);
+  req.session.destroy((err) => {
+    if (err) {
+      console.log(err);
+    }
+    res.redirect("/");
+  });
 });
 
 app.get('/logout', (req,res) => {
