@@ -246,7 +246,7 @@ app.get("/members", (req, res) => {
     return;
   }
 
-  const randomImage = Math.floor(Math.random() * 2) + 1;
+  const randomImage = Math.floor(Math.random() * 3) + 1;
 
   res.send(`
     <h1>Hello, ${name}!</h1>
@@ -279,10 +279,13 @@ app.get('/cat/:id', (req,res) => {
     var cat = req.params.id;
 
     if (cat == 1) {
-        res.send("Fluffy: <img src='/fluffy.gif' style='width:250px;'>");
+        res.send("Fluffy: <img src='/1.gif' style='width:250px;'>");
     }
     else if (cat == 2) {
-        res.send("Socks: <img src='/socks.gif' style='width:250px;'>");
+        res.send("Socks: <img src='/2.gif' style='width:250px;'>");
+    }
+    else if (cat == 3) {
+        res.send("Tiger: <img src='/3.gif' style='width:250px;'>");
     }
     else {
         res.send("Invalid cat id: "+cat);
