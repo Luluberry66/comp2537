@@ -1,0 +1,12 @@
+<%- include("templates/header") %>
+<h1>Cats!</h1>
+ <%  if (cat == 1) { %> 
+        <img src='/1.gif' style='width:250px;'>
+    <% } else if (cat == 2) { %>
+        <img src='/2.gif' style='width:250px;'>
+    <% } else if (cat == 3) { %>
+        <img src='/3.gif' style='width:250px;'>
+    <% }else { %>
+        Invalid cat id: <%= cat %> 
+    <% } %>
+<%- include("templates/footer") %>

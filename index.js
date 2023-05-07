@@ -14,8 +14,7 @@ const app = express();
 
 const Joi = require("joi");
 
-
-// const expireTime = 1 * 60 * 60 * 1000; //expires after 1 day  (hours * minutes * seconds * millis)
+const expireTime = 1 * 60 * 60 * 1000; //expires after 1 day  (hours * minutes * seconds * millis)
 
 /* secret information section */
 const mongodb_host = process.env.MONGODB_HOST;
@@ -30,6 +29,8 @@ const node_session_secret = process.env.NODE_SESSION_SECRET;
 var {database} = include('databaseConnection');
 
 const userCollection = database.db(mongodb_database).collection('users');
+
+app.set("view engine", "ejs");
 
 app.use(express.urlencoded({extended: false}));
 
@@ -47,21 +48,40 @@ app.use(session({
 	resave: true
 }
 ));
-
-app.get("/", (req, res) => {
-  if (!req.session.username) {
-    res.send(`
-      You are not logged in.
-      <br><a href="/login">Login</a>
-      <br><a href="/createUser">Create User</a>
-    `);
-  } else {
-    res.send(`
-      Hello, ${req.session.username}.
-      <br><a href="/members">Members Area</a>
-      <br><a href="/logout">Logout</a>
-    `);
+function isValidSession(req) {
+  if (req.session.authenticated) {
+    return true;
   }
+  return false;
+}
+
+function sessionValidation(req, res, next) {
+  if (isValidSession(req)) {
+    next();
+  } else {
+    res.redirect("/login");
+  }
+}
+function isAdmin(req) {
+  if (req.session.user_type == "admin") {
+    return true;
+  }
+  return false;
+}
+
+function adminAuthorization(req, res, next) {
+  if (!isAdmin(req)) {
+    res.status(403);
+    res.render("errorMessage", { error: "Not Authorized" });
+    return;
+  } else {
+    next();
+  }
+}
+
+app.get("/", (req, res) => {  
+
+  res.render("index", {username: req.session.username});
 });
 
 app.get('/nosql-injection', async (req,res) => {
@@ -97,23 +117,15 @@ app.get('/nosql-injection', async (req,res) => {
 app.get('/about', (req,res) => {
     var color = req.query.color;
 
-    res.send("<h1 style='color:"+color+";'>Lulu</h1>");
+    res.render("about", {color: color});
 });
 
 app.get('/contact', (req,res) => {
     var missingEmail = req.query.missing;
-    var html = `
-        email address:
-        <form action='/submitEmail' method='post'>
-            <input name='email' type='text' placeholder='email'>
-            <button>Submit</button>
-        </form>
-    `;
-    if (missingEmail) {
-        html += "<br> email is required";
-    }
-    res.send(html);
+    res.render("contact", {missing: missingEmail});
 });
+
+
 
 app.post('/submitEmail', (req,res) => {
     var email = req.body.email;
@@ -121,35 +133,17 @@ app.post('/submitEmail', (req,res) => {
         res.redirect('/contact?missing=1');
     }
     else {
-        res.send("Thanks for subscribing with your email: "+email);
+        res.res.render("submitEmail", { email: email });
     }
 });
 
 
 app.get('/createUser', (req,res) => {
-    var html = `
-    create user
-    <form action='/submitUser' method='post'>
-    <input name='username' type='text' placeholder='Enter your username'><br>
-    <input name='email' type='email' placeholder='Enter your email'><br>
-    <input name='password' type='password' placeholder='Enter your password'><br>
-    <button>Submit</button>
-    </form>
-    `;
-    res.send(html);
+    res.render("createUser");
 });
 
-
-app.get('/login', (req,res) => {
-    var html = `
-    log in
-    <form action='/loggingin' method='post'>
-    <input name='email' type='email' placeholder='email'><br>
-    <input name='password' type='password' placeholder='password'><br>
-    <button>Submit</button>
-    </form>
-    `;
-    res.send(html);
+app.get("/login", (req, res) => {
+  res.render("login");
 });
 
 app.post("/submitUser", async (req, res) => {
@@ -157,13 +151,13 @@ app.post("/submitUser", async (req, res) => {
   var email = req.body.email;
   var password = req.body.password;
 
-  if (!username) {
-    res.send("All fields are required. <a href='/createUser'>Try again</a>");
-  } else if (!email) {
-    res.send("All fields are required. <a href='/createUser'>Try again</a>");
-  } else if (!password) {
-    res.send("All fields are required. <a href='/createUser'>Try again</a>");
-  } else {
+  // if (!username) {
+  //   res.send("All fields are required. <a href='/createUser'>Try again</a>");
+  // } else if (!email) {
+  //   res.send("All fields are required. <a href='/createUser'>Try again</a>");
+  // } else if (!password) {
+  //   res.send("All fields are required. <a href='/createUser'>Try again</a>");
+  // } else {
     const schema = Joi.object({
       username: Joi.string().alphanum().max(20).required(),
       email: Joi.string().email().required(),
@@ -174,25 +168,25 @@ app.post("/submitUser", async (req, res) => {
 
     if (validationResult.error != null) {
       console.log(validationResult.error);
-      res.send(
-        `Invalid input: ${validationResult.error.details[0].message}. <a href='/createUser'>Try again</a>`
-      );
-    } else {
-      const salt = await bcrypt.genSalt(saltRounds);
-      const hashedPassword = await bcrypt.hash(password, salt);
+      req.redirect("/createUser")
+      return
+    } 
+      // const salt = await bcrypt.genSalt(saltRounds);
+      const hashedPassword = await bcrypt.hash(password, saltRounds);
+
 
       await userCollection.insertOne({
         username: username,
         email: email,
         password: hashedPassword,
+        user_type: "user",
       });
-
-      res.send(
-        `User ${username} has been created. <a href='/login'>Log in</a>`
-      );
+      console.log("user inserted")
+      var html = "successfully created user";
+      res.render("submitUser", { html: html });
     }
-  }
-});
+  
+);
 
 
 app.post("/loggingin", async (req, res) => {
@@ -201,103 +195,180 @@ app.post("/loggingin", async (req, res) => {
   var password = req.body.password;
 
   // Find the user in the database using email
-  const user = await userCollection.findOne({ email: email });
-  if (!user) {
-    return res.status(400).send("user not found");
-  }
+  // const user = await userCollection.findOne({ username: username });
+  // if (!user) {
+  //   return res.status(400).send("user not found");
+  // }
 
-  // Compare the password with the hashed password using bcrypt
-  const passwordMatch = await bcrypt.compare(password, user.password);
-  if (!passwordMatch) {
-    return res.status(400).send("invalid password");
-  }
+  // // Compare the password with the hashed password using bcrypt
+  // const passwordMatch = await bcrypt.compare(password, user.password);
+  // if (!passwordMatch) {
+  //   return res.status(400).send("invalid password");
+  // }
 
-  // Store the user's name in the session and redirect to members page
-  req.session.username = user.username;
-  console.log("logged in as " + req.session.username);
-  res.redirect("/members");
+  // // Store the user's name in the session and redirect to members page
+  // req.session.username = user.username;
+  // console.log("logged in as " + req.session.username);
+  // res.redirect("/members");
+  const schema = Joi.string().max(20).required();
+	const validationResult = schema.validate(email);
+	if (validationResult.error != null) {
+	   console.log(validationResult.error);
+	   res.redirect("/login");
+	   return;
+	}
 
-  const oneHour = 60 * 60 * 1000;
-  req.session.timer = setTimeout(() => {
-    req.session.destroy((err) => {
-      if (err) {
-        console.log(err);
-      } else {
-        console.log("session destroyed successfully");
-      }
-    });
-  }, oneHour);
+	const result = await userCollection.find({email: email}).project({username: 1, password: 1, user_type: 1, _id: 1}).toArray();
+
+	console.log(result);
+	if (result.length != 1) {
+		console.log("user not found");
+		res.redirect("/login");
+		return;
+	}
+	if (await bcrypt.compare(password, result[0].password)) {
+		console.log("correct password");
+		req.session.authenticated = true;
+		req.session.username = result[0].username;
+        req.session.user_type = result[0].user_type;
+		req.session.cookie.maxAge = expireTime;
+
+		res.redirect('/loggedIn');
+		return;
+	}
+	else {
+		console.log("incorrect password");
+		res.redirect("/login");
+		return;
+	}
+
+
+  // const oneHour = 60 * 60 * 1000;
+  // req.session.timer = setTimeout(() => {
+  //   req.session.destroy((err) => {
+  //     if (err) {
+  //       console.log(err);
+  //     } else {
+  //       console.log("session destroyed successfully");
+  //     }
+  //   });
+  // }, oneHour);
 });
 
+app.use("/loggedin", sessionValidation);
 app.get('/loggedin', (req,res) => {
     if (!req.session.authenticated) {
         res.redirect('/login');
     }
-    var html = `
-    You are logged in!
-    `;
-    res.send(html);
+    res.render("loggedin", {username: req.session.username});
 });
-app.get("/members", (req, res) => {
+
+app.get("/loggedin/info", (req, res) => {
+  res.render("loggedin-info");
+});
+
+app.get("/cats", (req, res) => {
   const name = req.session.username;
 
   if (!name) {
     res.redirect("/login");
     return;
   }
+  else{
+    res.render("cats");
+  }
 
-  const randomImage = Math.floor(Math.random() * 3) + 1;
+  app.get("/logout", (req, res) => {
+    clearTimeout(req.session.timer);
+    req.session.destroy((err) => {
+      if (err) {
+        console.log(err);
+      }
+      res.redirect("/");
+    });
+  });
+  
+  app.get('/logout', (req,res) => {
+    req.session.destroy();
+    res.render('loggedout')
+  });
 
-  res.send(`
-    <h1>Hello, ${name}!</h1>
-    <img src="/${randomImage}.gif" alt="random image">
-    <a href="/logout">Logout</a>
-  `);
+  // const randomImage = Math.floor(Math.random() * 3) + 1;
+  // res.send(`
+  //   <h1>Hello, ${name}!</h1>
+  //   <img src="/${randomImage}.gif" alt="random image">
+  //   <a href="/logout">Logout</a>
+  // `);
+  app.get("/cat/:id", (req, res) => {
+    var cat = req.params.id;
+    res.render("cat", { cat: cat });
+  });
+
 });
+
+// app.get("/cats", (req, res) => {
+//   res.render("cats");
+// })
 
 app.get("/logout", (req, res) => {
-    clearTimeout(req.session.timer);
-  req.session.destroy((err) => {
-    if (err) {
-      console.log(err);
-    }
-    res.redirect("/");
-  });
+  req.session.destroy();
+  res.render("loggedout");
 });
-
-app.get('/logout', (req,res) => {
-	req.session.destroy();
-    var html = `
-    You are logged out.
-    `;
-    res.send(html);
-});
-
-
 app.get('/cat/:id', (req,res) => {
 
     var cat = req.params.id;
 
-    if (cat == 1) {
-        res.send("Fluffy: <img src='/1.gif' style='width:250px;'>");
-    }
-    else if (cat == 2) {
-        res.send("Socks: <img src='/2.gif' style='width:250px;'>");
-    }
-    else if (cat == 3) {
-        res.send("Tiger: <img src='/3.gif' style='width:250px;'>");
-    }
-    else {
-        res.send("Invalid cat id: "+cat);
-    }
+    // if (cat == 1) {
+    //     res.send("Fluffy: <img src='/1.gif' style='width:250px;'>");
+    // }
+    // else if (cat == 2) {
+    //     res.send("Socks: <img src='/2.gif' style='width:250px;'>");
+    // }
+    // else if (cat == 3) {
+    //     res.send("Tiger: <img src='/3.gif' style='width:250px;'>");
+    // }
+    // else {
+    //     res.send("Invalid cat id: "+cat);
+    // }
+    res.render("cat", {cat: cat});
 });
+app.get("/admin", sessionValidation, adminAuthorization, async (req, res) => {
+  console.log("admin page")
+  const users = await userCollection
+    .find()
+    .project({ username: 1, _id: 1 })
+    .toArray();
 
+  res.render("admin", { users: users });
+  
+});
+app.post("/promote", adminAuthorization, async (req, res) => {
+  console.log("body: ", req.body);
+  const nameSelected = req.body.nameSelected;
+  const result = await userCollection.updateOne(
+    { username: nameSelected },
+    { $set: { user_type: "admin" } }
+  );
+  console.log("result: ", result);
+
+  res.redirect("/admin");
+});
+app.post("/demote", adminAuthorization, async (req, res) => {
+  console.log("body: ", req.body);
+  const nameSelected = req.body.nameSelected;
+  const result = await userCollection.updateOne(
+    { username: nameSelected },
+    { $set: { user_type: "user" } }
+  );
+  console.log("result: ", result);
+  res.redirect("/admin");
+});
 
 app.use(express.static(__dirname + "/public"));
 
 app.get("*", (req,res) => {
 	res.status(404);
-	res.send("Page not found - 404");
+	res.render("404");
 })
 
 app.listen(port, () => {

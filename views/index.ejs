@@ -1,0 +1,15 @@
+<%- include("templates/header") %> 
+<% if (!username) { %>
+  <h1>You are not logged in.</h1>
+  <a class="btn btn-success rounded-pill px-3" href="/login">Login</a>
+  <a class="btn btn-danger rounded-pill px-3" href="/createUser">Sign up</a>
+  <a class="btn btn-primary rounded-pill px-3" href="/cats">Cats</a>
+  <a class="btn btn-warning rounded-pill px-3" href="/404">404</a>
+  <!-- <br><a href="/login">Login</a> -->
+  <!-- <br><a href="/createUser">Create User</a> -->
+<% } else { %>
+  <h1>Hello, <%= username %>.</h1>
+  <a class="btn btn-success rounded-pill px-3" href="/cats">Members Area</a>
+  <a class="btn btn-danger rounded-pill px-3" href="/logout">Logout</a>
+<% } %>
+<%- include("templates/footer") %>
